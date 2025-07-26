@@ -1,32 +1,52 @@
+# 将配药工具脚本升级为更完整的 Streamlit 源码版本：
+# - 支持单位转换（µg/mL ↔ mM，分子量输入）
+# - 支持保存方案为 CSV
+# - 更友好的界面提示
+# - 打包为一个可用于 Hugging Face Spaces 或本地部署的 Python 脚本
 
 import streamlit as st
 import pandas as pd
 
-st.title("🧪 自动配药计算工具")
-st.markdown("根据你的输入自动计算每孔加药和培养基体积。")
+st.set_page_config(page_title="🧪 自动配药工具", layout="centered")
 
-# 输入孔总体积
+st.title("🧪 自动配药计算工具 Pro 版")
+st.markdown("设计适用于细胞实验的自动加药计算工具，支持终浓度设置、单位转换、储备液选择等功能。")
+
+# 设置总体积
 total_vol = st.number_input("每孔总体积 (µL)", value=2000, step=100)
 
-# 输入目标浓度列表
-target_input = st.text_input("目标浓度列表 (mM, 逗号分隔)", "0,0.5,1,2,5,10")
-target_concs = [float(x.strip()) for x in target_input.split(",") if x.strip()]
+# 支持单位转换功能
+st.markdown("### ✅ 浓度单位转换（可选）")
+with st.expander("点击展开 µg/mL ↔ mM 转换工具"):
+    mw = st.number_input("分子量 (g/mol)", value=194.19, step=0.01, help="输入药物分子量")
+    ug_per_ml = st.number_input("µg/mL 浓度", value=0.0, step=0.1)
+    if mw > 0:
+        mmol_per_l = (ug_per_ml / 1000) / mw * 1000  # 转为 mM
+        st.info(f"≈ {mmol_per_l:.3f} mM")
+    mm_input = st.number_input("反向换算：mM 浓度", value=0.0, step=0.1)
+    ugml_back = mm_input * mw
+    st.info(f"≈ {ugml_back:.2f} µg/mL")
 
+# 储备液输入
 st.markdown("### 储备液设置")
-st.markdown("输入每个储备液的浓度和最大可用体积（单位 µL）")
+stock_input = st.text_area("输入储备液浓度与体积 (格式: 浓度mM:体积µL，每行一个)", "2: 1000\n5: 1000\n20: 1000")
 
-stock_data = st.text_area("储备液列表 (格式: 浓度 mM: 体积 µL，一行一个)", "2: 1000\n5: 1000\n20: 1000")
-
-# 解析储备液信息
+# 将输入的文本转换为字典
 stock_solutions = {}
-for line in stock_data.strip().split("\n"):
+for line in stock_input.strip().split("\n"):  # 使用 \n 而不是 \\n
     try:
         c, v = line.strip().split(":")
         stock_solutions[float(c.strip())] = float(v.strip())
     except:
         st.warning(f"格式错误：{line}")
 
-# 计算配药结果
+
+# 输入目标浓度
+st.markdown("### 目标终浓度设置")
+target_concs = st.text_input("输入目标浓度列表 (mM, 用逗号分隔)", "0,0.5,1,2,5,10")
+target_concs = [float(x.strip()) for x in target_concs.split(",") if x.strip()]
+
+# 计算部分
 results = []
 for fc in target_concs:
     best_stock = None
@@ -52,9 +72,11 @@ for fc in target_concs:
         results.append((fc, f"{best_stock} mM", selected_volume, media_vol, "✓"))
 
 # 展示结果
-df_results = pd.DataFrame(results, columns=["终浓度 (mM)", "使用储备液", "加药体积 (µL)", "培养基体积 (µL)", "状态"])
-st.dataframe(df_results)
+df = pd.DataFrame(results, columns=["终浓度 (mM)", "使用储备液", "加药体积 (µL)", "培养基体积 (µL)", "状态"])
+st.markdown("### 📊 计算结果")
+st.dataframe(df)
 
-# 下载按钮
-st.download_button("📥 下载结果为 Excel", data=df_results.to_csv(index=False), file_name="配药结果.csv", mime="text/csv")
+# 下载 CSV
+csv = df.to_csv(index=False).encode("utf-8")
+st.download_button("📥 下载为 CSV 文件", data=csv, file_name="配药结果.csv", mime="text/csv")
 
